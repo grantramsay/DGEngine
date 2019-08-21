@@ -173,9 +173,6 @@ namespace DS1
         readObjects(fileStream);
         readGroups(fileStream);
         readPaths(fileStream);
-
-        width  -= 1;
-        height -= 1;
     }
 
     int Decoder::readTags(LittleEndianStreamReader& fileStream, int offset)
