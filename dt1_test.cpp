@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
             (DT1::Tile::HEIGHT / 2) * (ds1.width + ds1.height),
             sf::Color::Transparent);
 
-    std::function<void(int32_t, int, int, const std::set<int>&)> drawTile = [&](int32_t id, int x, int y, const std::set<int>& orientations) {
+    std::function<void(int32_t, int, int)> drawTile = [&](int32_t id, int x, int y) {
         int xPixel = (DT1::Tile::WIDTH / 2) * (x - y + (ds1.height - 1));
         int yPixel = (DT1::Tile::HEIGHT / 2) * (x + y);
         for (auto& dt1 : dt1s)
@@ -86,43 +86,60 @@ int main(int argc, char* argv[])
                 // TODO: Use tile.rarity and random to select...
                 auto selectedTileIndex = tileOptions[0];
                 const auto& tile = tiles[selectedTileIndex];
-                if (orientations.count(tile.orientation.rawValue()) != 0)
+
+                // 128 is height of floor tile images (just centers the output image).
+                yPixel -= tile.yOffset - 128;
+                yPixel = std::max(0, yPixel);
+
+                //if (tile.orientation.rawValue() == DT1::Orientation::ROOF)
+                //    yPixel += tile.roofHeight;
+
+                auto info = DT1ImageContainer::ImageInfo();
+                auto tileImage = dt1.get(selectedTileIndex, &palette, info);
+                lvlImage.copy(tileImage, xPixel, yPixel, sf::IntRect(0, 0, 0, 0), true);
+
+                // Draw sibling textures...
+                if (tile.orientation.rawValue() == DT1::Orientation::RIGHT_NORTH_CORNER_WALL)
                 {
-                    // 128 is height of floor tile images (just centers the output image).
-                    yPixel -= tile.yOffset - 128;
-                    yPixel = std::max(0, yPixel);
-
-                    //if (tile.orientation.rawValue() == DT1::Orientation::ROOF)
-                    //    yPixel += tile.roofHeight;
-
-                    auto info = DT1ImageContainer::ImageInfo();
-                    auto tileImage = dt1.get(selectedTileIndex, &palette, info);
-                    lvlImage.copy(tileImage, xPixel, yPixel, sf::IntRect(0, 0, 0, 0), true);
-
-                    // Draw sibling textures...
-                    if (tile.orientation.rawValue() == DT1::Orientation::RIGHT_NORTH_CORNER_WALL)
-                    {
-                        auto siblingTileId = DT1::Tile::createIndex(DT1::Orientation::LEFT_NORTH_CORNER_WALL, tile.mainIndex, tile.subIndex);
-                        drawTile(siblingTileId, x, y, { DT1::Orientation::LEFT_NORTH_CORNER_WALL });
-                    }
-
-                    break;
+                    auto siblingTileId = DT1::Tile::createIndex(DT1::Orientation::LEFT_NORTH_CORNER_WALL, tile.mainIndex, tile.subIndex);
+                    drawTile(siblingTileId, x, y);
                 }
+
+                break;
             }
         }
     };
 
-    auto drawTiles = [&](std::map<int, DS1::Cell> cells, int increment,
+    typedef std::vector<std::vector<int>> LevelLayer;
+    std::vector<LevelLayer> levelLayers;
+
+    auto addLevelLayer = [&](std::map<int, DS1::Cell> cells, int increment,
             int offset, const std::set<int>& orientations) {
+
+        // Append new layer.
+        levelLayers.emplace_back();
+        auto& levelLayer = levelLayers.back();
+        levelLayer.resize(ds1.height);
+
+        // Init all tiles to unused (-1).
+        for (int y = 0; y < levelLayer.size(); y++)
+        {
+            levelLayer[y].resize(ds1.width);
+            for (int x = 0; x < levelLayer[0].size(); x++)
+                levelLayer[y][x] = -1;
+        }
+
         int index = offset;
         for (int y = 0; y < ds1.height; y++)
         {
             for (int x = 0; x < ds1.width; x++)
             {
+                // int index = offset + increment * (y * ds1.width + x);
                 if (cells.count(index) != 0)
                 {
                     auto id = cells.at(index).id;
-                    drawTile(id, x, y, orientations);
+                    if (orientations.count(DT1::Tile::getOrientation(id)) != 0)
+                        levelLayer[y][x] = id;
                 }
                 index += increment;
             }
@@ -131,7 +148,7 @@ int main(int argc, char* argv[])
 
     // Draw lower walls
     for (int i = 0; i < ds1.numWalls; i++)
-        drawTiles(ds1.walls, ds1.numWalls, i, {
+        addLevelLayer(ds1.walls, ds1.numWalls, i, {
                 DT1::Orientation::LOWER_LEFT_WALL,
                 DT1::Orientation::LOWER_RIGHT_WALL,
                 DT1::Orientation::LOWER_NORTH_CORNER_WALL,
@@ -139,18 +156,18 @@ int main(int argc, char* argv[])
 
     // Draw floors
     for (int i = 0; i < ds1.numFloors; i++)
-        drawTiles(ds1.floors, ds1.numFloors, i, { DT1::Orientation::FLOOR });
+        addLevelLayer(ds1.floors, ds1.numFloors, i, { DT1::Orientation::FLOOR });
 
     // Draw shadows
     // TODO: Draws shadows everywhere, must be more to it...
     //for (int i = 0; i < ds1.numShadows; i++)
-    //    drawTiles(ds1.shadows, ds1.numShadows, i, { DT1::Orientation::SHADOW });
+    //    addLevelLayer(ds1.shadows, ds1.numShadows, i, { DT1::Orientation::SHADOW });
 
     // TODO: Draw walkable
 
     // Draw walls
     for (int i = 0; i < ds1.numWalls; i++)
-        drawTiles(ds1.walls, ds1.numWalls, i, {
+        addLevelLayer(ds1.walls, ds1.numWalls, i, {
                 DT1::Orientation::LEFT_WALL,
                 DT1::Orientation::LEFT_NORTH_CORNER_WALL,
                 DT1::Orientation::LEFT_END_WALL,
@@ -165,18 +182,31 @@ int main(int argc, char* argv[])
 
     // Draw roofs
     for (int i = 0; i < ds1.numWalls; i++)
-        drawTiles(ds1.walls, ds1.numWalls, i, { DT1::Orientation::ROOF });
+        addLevelLayer(ds1.walls, ds1.numWalls, i, { DT1::Orientation::ROOF });
 
     // TODO: Draw objects
 
+    // Draw the whole level.
+    for (auto& levelLayer : levelLayers)
+    {
+        for (int y = 0; y < levelLayer.size(); y++)
+            for (int x = 0; x < levelLayer[0].size(); x++)
+                if (levelLayer[y][x] != -1)
+                    drawTile(levelLayer[y][x], x, y);
+    }
+
     // Draw special...
-    // TODO: probably not right, doesn't seem to draw anything..
+    // TODO: figure out how to draw these...
 //    for (const auto& objectPair : ds1.objects)
 //    {
 //        const auto& object = objectPair.second;
-//        drawTile(object.id, object.x, object.x, {
-//                DT1::Orientation::SPECIAL_10,
-//                DT1::Orientation::SPECIAL_11 });
+//        std::set<int> orientations = {
+//            DT1::Orientation::SPECIAL_10,
+//            DT1::Orientation::SPECIAL_11 };
+//        if (orientations.count(DT1::Tile::getOrientation(object.id)) != 0)
+//            drawTile(object.id, object.x / DT1::Tile::SUBTILE_SIZE,
+//                    object.y / DT1::Tile::SUBTILE_SIZE);
+//
 //    }
 
     bool saved = lvlImage.saveToFile("test.jpg");
