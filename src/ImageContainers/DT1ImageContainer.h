@@ -181,7 +181,7 @@ public:
         const PaletteArray* palette, ImageInfo& imgInfo) const;
 
     const std::vector<DT1::Tile>& getTiles() const { return tiles; }
-    const std::vector<int> getTilesById(int id)
+    const std::vector<int> getTilesById(int id) const
     {
         if (tilesById.count(id) == 0)
            return {};

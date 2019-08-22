@@ -476,6 +476,8 @@ add_executable(dt1_test
     ds1.h
     src/ImageContainers/DT1ImageContainer.cpp
     src/ImageContainers/DT1ImageContainer.h
+    src/ImageContainers/DCCImageContainer.cpp
+    src/ImageContainers/DCCImageContainer.h
     src/ImageContainers/ImageContainer.h
     src/ImageContainers/SimpleImageContainer.cpp
     src/ImageContainers/SimpleImageContainer.h
